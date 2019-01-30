@@ -7,13 +7,13 @@ namespace WillhabenScrapper.Migrations
     using System.Resources;
     
     [GeneratedCode("EntityFramework.Migrations", "6.2.0-61023")]
-    public sealed partial class flattype : IMigrationMetadata
+    public sealed partial class initial : IMigrationMetadata
     {
-        private readonly ResourceManager Resources = new ResourceManager(typeof(flattype));
+        private readonly ResourceManager Resources = new ResourceManager(typeof(initial));
         
         string IMigrationMetadata.Id
         {
-            get { return "201811241614587_flattype"; }
+            get { return "201812202258146_initial"; }
         }
         
         string IMigrationMetadata.Source

@@ -10,7 +10,6 @@ namespace WillhabenScrapper.Migrations
         public Configuration()
         {
             AutomaticMigrationsEnabled = false;
-            ContextKey = "WillhabenScrapper.WhContext";
         }
 
         protected override void Seed(WillhabenScrapper.WhContext context)
