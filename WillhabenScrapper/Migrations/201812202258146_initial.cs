@@ -16,7 +16,7 @@ namespace WillhabenScrapper.Migrations
                         price = c.Single(nullable: false),
                         aream2 = c.Int(nullable: false),
                         zimmerCount = c.Int(nullable: false),
-                        street = c.String(unicode: false, maxLength: 40),
+                        street = c.String(unicode: false, maxLength: 80),
                         district = c.Int(nullable: false),
                         category = c.String(unicode: false, maxLength: 10),
                         rentorbuy = c.String(unicode: false, maxLength: 10),

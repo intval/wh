@@ -16,6 +16,7 @@ using System.Globalization;
 using System.Threading;
 using MySql.Data.Entity;
 using System.Runtime.CompilerServices;
+using System.Data.SqlClient;
 
 namespace WillhabenScrapper
 {
@@ -68,13 +69,17 @@ namespace WillhabenScrapper
         const string flatRentUrl = "mietwohnungen";
         const string gewerbeBuyUrl = "gewerbeimmobilien-kaufen";
         const string gewerbeRentUrl = "gewerbeimmobilien-mieten";
-        
+
+        const int LAST_PERIOD = 60;
+
+
         private WhContext ctx;
         //private WhContext ctx2;
-        private int DistrictForArea;
+        private int DefaultDistrictForThisArea;
         private int progressCounter = 0;
         
         private int totalCount = 0;
+
 
         public Program()
         {
@@ -85,9 +90,9 @@ namespace WillhabenScrapper
 
             //areaId = 601;
 
-            this.DistrictForArea = 1230;
+            this.DefaultDistrictForThisArea = 1230;
             if (areaId == 601)
-                DistrictForArea = 8020;
+                DefaultDistrictForThisArea = 8020;
         }
 
         static void Main(string[] args)
@@ -101,23 +106,16 @@ namespace WillhabenScrapper
             
             new Program().ScrapLists();
             GC.Collect(2);
-            new Program().ScrapEachItem();
-            GC.Collect(2);
-            new Program().RefreshOutdated();
+            // new Program().ScrapEachItem();
 
             Console.WriteLine("Finished");
             Console.ReadKey();
         }
 
-        private void RefreshOutdated()
-        {
-            
-
-        }
 
         private void ScrapEachItem(int? take = null)
         {
-            var dt = DateTime.Now.Subtract(TimeSpan.FromDays(7));
+            var dt = DateTime.Now.Subtract(TimeSpan.FromDays(2));
 
             var col = ctx.Flats
                 .Where(x => 
@@ -288,21 +286,26 @@ namespace WillhabenScrapper
         private void ScrapLists()
         {
 
-            var all = new[] { flatBuyUrl, flatRentUrl, gewerbeBuyUrl, gewerbeRentUrl};
-            int period = 120; // last xxx days of
+            var all = new[] { flatBuyUrl, flatRentUrl /*, gewerbeBuyUrl ,  gewerbeRentUrl */ };
+            int period = LAST_PERIOD; // last xxx days of
 
-            var lastFlat = ctx.Flats.Where(x => x.district == DistrictForArea).OrderByDescending(x => x.updatedInDb).FirstOrDefault();
+
+            ctx.Flats.SqlQuery("Update flats set deletedFromWh = NOW()");
+
+
+            var lastFlat = ctx.Flats.Where(x => x.district == DefaultDistrictForThisArea).OrderByDescending(x => x.updatedInDb).FirstOrDefault();
             if(lastFlat != null)
             {
-                period = (int) DateTime.Now.Subtract(lastFlat.updatedInDb).TotalDays + 1;
+                //period = (int) DateTime.Now.Subtract(lastFlat.updatedInDb).TotalDays + 1;
             }
 
             foreach (var u in all)
             {
+                var url = string.Format(whStringFormat, u, period, areaId);
                 Console.WriteLine("Starting with " + u);
-                var scrapper = new WhScraper(string.Format(whStringFormat, u, period, areaId), 100);
+                var scrapper = new WhScraper(url, 100);
                 scrapper.ObeyRobotsDotTxt = false;
-                scrapper.OnData = StoreInDb;
+                scrapper.OnData = (flat) => { StoreInDb(flat, u); } ;
                 scrapper.Start();
             }
 
@@ -311,26 +314,39 @@ namespace WillhabenScrapper
             
         }
 
-        private void StoreInDb( Flat e)
+        private void StoreInDb( Flat e, string type = "")
         {
-            Console.WriteLine($"flat with ID {e.id} on {e.aream2} with {e.zimmerCount} rooms for {e.price} on {e.street} in {e.district}");
-
             using (var ctx2 = new WhContext())
             {
-                if (!ctx2.Flats.Any(x => x.id == e.id))
+                var existingFlatInDb = ctx2.Flats.FirstOrDefault(x => x.id == e.id);
+                // new flat
+                if (null == existingFlatInDb)
                 {
-                    ctx2.Flats.Add(e);
-                    ctx2.SaveChanges();
+
+                    e.deletedFromWh = null;
 
                     if (e.updatedInDb == DateTime.MinValue)
                         e.updatedInDb = DateTime.Now;
 
                     if (e.addedOnWh == DateTime.MinValue)
                         e.addedOnWh = DateTime.Now;
+
+                    ctx2.Flats.Add(e);
+                    ctx2.SaveChanges();
+
+                    Console.WriteLine($"flat NEW [{type}] with ID {e.id} on {e.aream2} with {e.zimmerCount} rooms for {e.price} on {e.street} in {e.district}");
+
+
                 }
+                // existing item in db
                 else
                 {
+                    // ctx2.Database.ExecuteSqlCommand(TransactionalBehavior.DoNotEnsureTransaction, "Update flats set deletedFromWh = null where id=" + e.id);
+                    existingFlatInDb.deletedFromWh = null;
+                    existingFlatInDb.updatedInDb = DateTime.Now;
+                    ctx2.SaveChanges();
 
+                    Console.WriteLine($"flat EXISTING [{type}] with ID {e.id} on {e.aream2} with {e.zimmerCount} rooms for {e.price} on {e.street} in {e.district}");
                 }
             }
 
@@ -417,7 +433,7 @@ namespace WillhabenScrapper
                         district = district,
                         href = href,
                         price = p4,
-                        street = street,
+                        street = street?.Substring(0, Math.Min(80, street.Length)),
                         zimmerCount = zimmerCount,
                         category = UrlToCategory(response.RequestlUrl),
                         rentorbuy = UrlToRentOrBuy(response.RequestlUrl),
@@ -464,7 +480,7 @@ namespace WillhabenScrapper
             public override void Init()
             {
                 this.LoggingLevel = WebScraper.LogLevel.None;
-                this.RateLimitPerHost = new TimeSpan(0, 0, 1);
+                this.RateLimitPerHost = new TimeSpan(0, 0, 2);
                 this.ObeyRobotsDotTxt = false;
             }
 
@@ -480,6 +496,13 @@ namespace WillhabenScrapper
                 if(response.FinalUrl != response.RequestlUrl)
                 {
                     Console.WriteLine($"Redirected {response.RequestlUrl} to {response.FinalUrl}");
+                }
+
+                if(response.Html.Contains("leastFactor(n)"))
+                {
+                    Console.WriteLine("Skipped due to anti spam policy");
+                    Thread.Sleep(1000 * 10);
+                    return;
                 }
 
                 var sb = new StringBuilder();
