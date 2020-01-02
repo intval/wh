@@ -1,0 +1,46 @@
+DELIMITER $$
+DROP PROCEDURE IF EXISTS AvgForArea$$
+DROP FUNCTION IF EXISTS AvgForArea$$
+
+CREATE FUNCTION AvgForArea(
+	inpDistrict INT, 
+	inpArea INT
+) RETURNS INTEGER NOT DETERMINISTIC CONTAINS SQL READS SQL DATA
+BEGIN
+	DECLARE X1 INT;
+    select pm INTO X1 from
+    ( select * from (
+					select 
+						district,
+						price/aream2 as pm, 
+						aream2,
+						cume_dist() over (order by price/aream2) dist
+						from flats
+					where category='wohnung' and rentOrBuy = 'buy'
+					and district = inpDistrict
+					and aream2 >= FLOOR(inpArea / 10) * 10 and aream2 <= ceil((inpArea+1) / 10) * 10
+					order by dist asc
+					-- and zimmerCount = 2 
+					
+			) x group by x.pm  having x.dist >= 0.25 limit 1
+            ) z;
+            
+	RETURN X1;
+			
+END$$
+
+DELIMITER ;
+
+
+SELECT AvgForArea(1050, 60);
+
+
+
+
+
+select *, price/aream2 as pm, AvgForArea(flats.district, flats.aream2) as cheapPrice from flats 
+
+where deletedFromWh is null AND
+district = 1040 && rentOrBuy='buy' && price/aream2 < 5500 
+having pm < cheapPrice
+order by pm asc
