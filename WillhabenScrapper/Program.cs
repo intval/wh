@@ -69,6 +69,10 @@ namespace WillhabenScrapper
         const string flatRentUrl = "mietwohnungen";
         const string gewerbeBuyUrl = "gewerbeimmobilien-kaufen";
         const string gewerbeRentUrl = "gewerbeimmobilien-mieten";
+        const string hausBuyUrl = "haus-kaufen";
+        const string hausRentUrl = "haus-mieten";
+
+
 
         const int LAST_PERIOD = 60;
 
@@ -255,8 +259,7 @@ namespace WillhabenScrapper
                             {
                                 var ctxxx = new WhContext();
                                 ctxxx.Database
-                                .ExecuteSqlCommandAsync($"UPDATE Flats SET deletedFromWh = \"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}\" " +
-                                    $"WHERE href = \"{url}\" AND deletedFromWh is NULL")
+                                .ExecuteSqlCommandAsync($"UPDATE Flats SET deletedFromWh = NOW() WHERE href = \"{url}\" AND deletedFromWh is NULL")
 
                                 .GetAwaiter().OnCompleted(() =>
                                 {
@@ -286,11 +289,12 @@ namespace WillhabenScrapper
         private void ScrapLists()
         {
 
-            var all = new[] { flatBuyUrl, flatRentUrl /*, gewerbeBuyUrl ,  gewerbeRentUrl */ };
+            var all = new[] { flatBuyUrl, flatRentUrl, gewerbeBuyUrl ,  gewerbeRentUrl, hausBuyUrl,  hausRentUrl };
             int period = LAST_PERIOD; // last xxx days of
 
 
-            ctx.Flats.SqlQuery("Update flats set deletedFromWh = NOW()");
+            var q = ctx.Database.ExecuteSqlCommand("Update flats set deletedFromWh = NOW()");
+            
 
 
             var lastFlat = ctx.Flats.Where(x => x.district == DefaultDistrictForThisArea).OrderByDescending(x => x.updatedInDb).FirstOrDefault();
@@ -451,10 +455,10 @@ namespace WillhabenScrapper
 
             private string UrlToRentOrBuy(string requestlUrl)
             {
-                if (requestlUrl.ToLower().Contains(flatBuyUrl) || requestlUrl.ToLower().Contains(gewerbeBuyUrl))
+                if (requestlUrl.ToLower().Contains(flatBuyUrl) || requestlUrl.ToLower().Contains(gewerbeBuyUrl) || requestlUrl.ToLower().Contains(hausBuyUrl))
                     return "buy";
 
-                if (requestlUrl.ToLower().Contains(flatRentUrl) || requestlUrl.ToLower().Contains(gewerbeRentUrl))
+                if (requestlUrl.ToLower().Contains(flatRentUrl) || requestlUrl.ToLower().Contains(gewerbeRentUrl) || requestlUrl.ToLower().Contains(hausRentUrl))
                     return "rent";
 
                 return null;
@@ -464,6 +468,9 @@ namespace WillhabenScrapper
             {
                 if (requestlUrl.ToLower().Contains(flatBuyUrl) || requestlUrl.ToLower().Contains(flatRentUrl))
                     return "wohnung";
+
+                if (requestlUrl.ToLower().Contains(hausBuyUrl) || requestlUrl.ToLower().Contains(hausRentUrl))
+                    return "haus";
 
                 if (requestlUrl.ToLower().Contains("/gewerbeimmobilien-"))
                     return "gewerbe";
@@ -502,6 +509,11 @@ namespace WillhabenScrapper
                 {
                     Console.WriteLine("Skipped due to anti spam policy");
                     Thread.Sleep(1000 * 10);
+                    return;
+                }
+
+                if(response.Html.Contains("ASYNDROM GmbH") || response.Html.Contains("Daten Info Service Eibl GmbH"))
+                {
                     return;
                 }
 
@@ -572,6 +584,10 @@ namespace WillhabenScrapper
                 }
                 
 
+                if(title.ToLower().Contains("versteigerungsobjekt"))
+                {
+                    return;
+                }
 
 
 

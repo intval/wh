@@ -1,10 +1,16 @@
+SET @@global.net_read_timeout=1600;
+SET @@local .net_read_timeout=1600;
+
 DELIMITER $$
 DROP PROCEDURE IF EXISTS AvgForArea$$
 DROP FUNCTION IF EXISTS AvgForArea$$
 
 CREATE FUNCTION AvgForArea(
 	inpDistrict INT, 
-	inpArea INT
+	inpArea INT,
+    inpPercentile DOUBLE,
+    inpRentOrBuy VARCHAR(20),
+    inpCategory VARCHAR(20)
 ) RETURNS INTEGER NOT DETERMINISTIC CONTAINS SQL READS SQL DATA
 BEGIN
 	DECLARE X1 INT;
@@ -16,13 +22,13 @@ BEGIN
 						aream2,
 						cume_dist() over (order by price/aream2) dist
 						from flats
-					where category='wohnung' and rentOrBuy = 'buy'
+					where category= inpCategory and rentOrBuy = inpRentOrBuy
 					and district = inpDistrict
 					and aream2 >= FLOOR(inpArea / 10) * 10 and aream2 <= ceil((inpArea+1) / 10) * 10
 					order by dist asc
 					-- and zimmerCount = 2 
 					
-			) x group by x.pm  having x.dist >= 0.25 limit 1
+			) x group by x.pm  having x.dist >= inpPercentile limit 1
             ) z;
             
 	RETURN X1;
@@ -32,15 +38,111 @@ END$$
 DELIMITER ;
 
 
-SELECT AvgForArea(1050, 60);
+SELECT AvgForArea(1050, 60, 0.25, 'buy', 'wohnung');
 
 
 
 
 
-select *, price/aream2 as pm, AvgForArea(flats.district, flats.aream2) as cheapPrice from flats 
 
-where deletedFromWh is null AND
-district = 1040 && rentOrBuy='buy' && price/aream2 < 5500 
+select *, price/aream2 as pm, AvgForArea(flats.district, flats.aream2, 0.25, flats.rentorbuy, flats.category) as cheapPrice from flats 
+
+where deletedFromWh is null AND 
+price < 250000 AND
+district = 1040 && rentOrBuy='buy' && price/aream2 < 5500 && category='wohnung'
 having pm < cheapPrice
 order by pm asc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DELIMITER $$
+DROP PROCEDURE IF EXISTS GetTypicalAream2ForFlatWithXRooms$$
+DROP FUNCTION IF EXISTS GetTypicalAream2ForFlatWithXRooms$$
+
+CREATE FUNCTION GetTypicalAream2ForFlatWithXRooms(
+	-- inpDistrict INT, 
+	inpZimmerCount INT,
+    inpPercentile DOUBLE,
+    -- inpRentOrBuy VARCHAR(20),
+    inpCategory VARCHAR(20)
+) RETURNS INTEGER NOT DETERMINISTIC CONTAINS SQL READS SQL DATA
+BEGIN
+	DECLARE X1 INT;
+    select aream2 INTO X1 from
+    ( select * from (
+					select 
+						district,
+						zimmerCount,
+						aream2,
+						cume_dist() over (order by aream2) dist
+						from flats
+					where category= inpCategory -- and rentOrBuy = inpRentOrBuy
+					-- and district = inpDistrict
+					and zimmerCount = inpZimmerCount
+					order by dist asc
+					-- and zimmerCount = 2 
+					
+			) x group by x.aream2  having x.dist >= inpPercentile limit 1
+            ) z;
+            
+	RETURN X1;
+			
+END$$
+
+DELIMITER ;
+
+
+SELECT GetTypicalAream2ForFlatWithXRooms(2, 0.4, 'wohnung');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+select *, ((cheapRentPrice-5) * aream2 * 12) / price as rendite from (
+	select *, 
+		price/aream2 as pm, 
+		AvgForArea(flats.district, flats.aream2, 0.25, flats.rentorbuy, flats.category) as cheapBuyPrice, 
+		AvgForArea(flats.district, flats.aream2, 0.25, 'rent', flats.category) as cheapRentPrice,
+        GetTypicalAream2ForFlatWithXRooms(flats.zimmerCount + 1, 0.4, flats.category) as plusRoomRequiredSize
+	from flats 
+
+	where deletedFromWh is null AND 
+	price < 450000 AND
+	-- district = 1040 &&
+    rentOrBuy='buy' && price/aream2 < 5500 && (category='wohnung' or category='haus') 
+    && title not like '%nbefristet%' && title not like '%Bungalow%' && title not like '%odernes Fertighaus%'  && title not like '%ertighaus%' 
+    && price > 21000 
+    
+	having pm <= cheapBuyPrice+1 and aream2 >= plusRoomRequiredSize
+	order by pm asc
+) xx
+having rendite > 0.01
+order by rendite DESC
