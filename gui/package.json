@@ -28,7 +28,7 @@
     "faker": "^4.1.0",
     "lodash.random": "^3.2.0",
     "lodash.times": "^4.3.2",
-    "nodemon": "^1.19.4",
+    "nodemon": "^2.0.4",
     "sequelize-cli": "^5.5.1",
     "ts-node": "^8.10.2",
     "webpack": "^4.43.0",
