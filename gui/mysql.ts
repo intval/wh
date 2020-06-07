@@ -7,14 +7,25 @@ var connection = mysql.createConnection({
   database : 'whscrapper'
 });
 
-const action = 'rent';
+const maxArea = 400;
 
 connection.connect(function(err) {
   
+    processPrices(connection, 'rent');
+    processPrices(connection, 'buy');
+
+    
+    
+    
+});
+
+function processPrices(connection, action = 'rent') {
     let table = {};
     let allPromises = [];
 
-    for(let d = 1; d <= 5; d++)
+
+
+    for(let d = 1; d <= 23; d++)
     {
         const district = `1${d.toString().padStart(2, '0')}0`;  
         table[`x` + district]   = {};
@@ -22,7 +33,7 @@ connection.connect(function(err) {
         {
             allPromises.push(new Promise((resolve, reject) => {
 
-                const cmd = pm(action, district, area, (area == 200) ? 5000 : area+9);
+                const cmd = pm(action, district, area, area+9);
                 connection.query(cmd, function(err, results, fields){
                     if(err) {
                         console.log(err); 
@@ -30,7 +41,7 @@ connection.connect(function(err) {
                     }
                     // console.log(results);
                     if(results.length) {
-                        table[`x` + district][`${area}-${area == 200 ? '': area+9}`] = parseFloat(results[0].pm).toFixed(2);
+                        table[`x` + district][`${area}-${area+9}`] = parseFloat(results[0].pm).toFixed(2);
                     } else {
                         console.log('no results found for', district, area)
                     }
@@ -42,20 +53,36 @@ connection.connect(function(err) {
         }
     }
 
-    Promise.all(allPromises).then(() => {
+    var newSetOfPromisses = [];
+
+    return Promise.all(allPromises).then(() => {
         for(let k in table) {
             for(let area in table[k]) {
-                const updQuery = `update prices set ${action}PerM2 = ${table[k][area]} where district=${k.substr(1, 4)} and areaM2 = '${area}'`;
+                let price = table[k][area];
+
+                const updQuery = `INSERT INTO prices (buyPerM2, rentPerM2, district, areaM2) VALUES (${action == 'buy' ? price : 0}, ${action == 'rent' ? price : 0}, ${k.substr(1, 4)}, '${area}') 
+                ON DUPLICATE KEY UPDATE ${action}PerM2 = ${price}`;
                 console.log(updQuery);
+
+                var promise = new Promise((resolve, reject) => {
+                        connection.query(updQuery, (err) => {
+                            if(err) {
+                                console.log(err); 
+                                reject(err);
+                            }
+                            else {
+                                resolve();
+                            }
+                    })
+                });
+
+                newSetOfPromisses.push(promise);
+                
+
             }
         }
-    }).then(() => {
-        connection.destroy();
-        // console.log(table);
-        console.log(JSON.stringify(table));
     });
-    
-});
+}
 
 
 function pm(rentOrBuy, district, areaFrom , areaTo) {
@@ -74,7 +101,7 @@ function pm(rentOrBuy, district, areaFrom , areaTo) {
 				
 		) x
 		 group by x.pm
-		 having dist >= 0.1 and dist < 0.2
+		 having dist >= 0.1 and dist < 0.3
 		 limit 1
 	 `;
 }
