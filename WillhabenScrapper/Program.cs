@@ -17,6 +17,7 @@ using System.Threading;
 using MySql.Data.Entity;
 using System.Runtime.CompilerServices;
 using System.Data.SqlClient;
+using System.Xml.Schema;
 
 namespace WillhabenScrapper
 {
@@ -303,22 +304,29 @@ namespace WillhabenScrapper
                 //period = (int) DateTime.Now.Subtract(lastFlat.updatedInDb).TotalDays + 1;
             }
 
-            foreach (var u in all)
+            var counters = new Dictionary<string, int>();
+
+            foreach (var objectType in all)
             {
-                var url = string.Format(whStringFormat, u, period, areaId);
-                Console.WriteLine("Starting with " + u);
+                var url = string.Format(whStringFormat, objectType, period, areaId);
+                Console.WriteLine("Starting with " + objectType);
+                int count = 0;
                 var scrapper = new WhScraper(url, 100);
                 scrapper.ObeyRobotsDotTxt = false;
-                scrapper.OnData = (flat) => { StoreInDb(flat, u); } ;
+                scrapper.OnData = (flat) => { 
+                    var isNew = StoreInDb(flat, objectType);
+                    if (isNew)
+                        Interlocked.Increment(ref count);
+                } ;
                 scrapper.Start();
             }
 
-            
+            Console.WriteLine("Observed total of new: ", string.Join(", ", counters.Select(kv => kv.Value + " " + kv.Key)));
 
             
         }
 
-        private void StoreInDb( Flat e, string type = "")
+        private bool StoreInDb( Flat e, string type = "")
         {
             using (var ctx2 = new WhContext())
             {
@@ -339,7 +347,7 @@ namespace WillhabenScrapper
                     ctx2.SaveChanges();
 
                     Console.WriteLine($"flat NEW [{type}] with ID {e.id} on {e.aream2} with {e.zimmerCount} rooms for {e.price} on {e.street} in {e.district}");
-
+                    return true;
 
                 }
                 // existing item in db
@@ -351,6 +359,7 @@ namespace WillhabenScrapper
                     ctx2.SaveChanges();
 
                     Console.WriteLine($"flat EXISTING [{type}] with ID {e.id} on {e.aream2} with {e.zimmerCount} rooms for {e.price} on {e.street} in {e.district}");
+                    return false;
                 }
             }
 
