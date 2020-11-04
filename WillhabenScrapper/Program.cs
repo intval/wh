@@ -18,6 +18,7 @@ using MySql.Data.Entity;
 using System.Runtime.CompilerServices;
 using System.Data.SqlClient;
 using System.Xml.Schema;
+using Newtonsoft.Json;
 
 namespace WillhabenScrapper
 {
@@ -392,74 +393,94 @@ namespace WillhabenScrapper
             }
             public override void Parse(Response response)
             {
-                foreach (var realEstate in response.Css(".isRealestate"))
+                var html = response.Html;
+                var matches = Regex.Match(html, @"__NEXT_DATA__.*?>(.*?)</script>");
+                var script = matches.Groups[1].Value;
+                dynamic json = JsonConvert.DeserializeObject(script);
+
+                var results = json?.props?.initialProps?.pageProps?.searchResult?.advertSummaryList?.advertSummary;
+
+                var elementsOnPageFound = false;
+
+                foreach (var item in results)
                 {
-                    var size = realEstate.Css(".info > .desc-left");
-                    var price = realEstate.Css("script");
-                    var header = realEstate.Css(".header > a");
 
-                    var title = realEstate.Css("[itemprop=\"name\"]").First().TextContentClean ?? "";
+                    var attributes = item.attributes.attribute;
 
-                    var address = realEstate.Css(".address-lg");
+                    float aream2 = 0;
+                    float price = 0;
+                    var title = "";
+                    var id = item.id;
+
+                    var href = "https://www.willhaben.at/iad/";
 
 
-                    var id = header.First().Attributes["data-ad-link"];
-                    var href = header.First().Attributes["href"];
+                    var district = 9000;
+                    var roomsCount = 0;
 
-                    var p = Regex.Matches(price.First().TextContentClean, @"'([A-Z0-9a-z=\+/]*)'\)\)")[0].Groups[1].Value;
-                    var p2 = Encoding.UTF8.GetString(Convert.FromBase64String(p));
-                    var p3 = Regex.Match(p2, @"([\d\.]+)").Value.Replace(".", "").Replace(",", "");
 
-                    if (string.IsNullOrEmpty(p3))
-                        p3 = "99999999";
+                    var addr = "";
 
-                    var p4 = float.Parse(p3);
-
-                    var areaMatches = Regex.Matches(size.First().TextContentClean, @"(\d+) m");
-                    
-                        var m2 = (areaMatches.Count > 0) ? int.Parse(areaMatches[0].Groups[1].Value) : 1;
-                     
-
-                    var roomsMatch = Regex.Matches(size.First().TextContentClean, @"m.*(\d+) Zimmer");
-                    var zimmerCount = (roomsMatch.Count > 0) ? int.Parse(roomsMatch[0].Groups[1].Value) : -1;
-
-                    /* Renngasse 10, 1010 Wien, 01.Bezirk, Innere Stadt */
-                    /* 1220 Wien, 22. Bezirk, Donaustadt */
-                    var addr = Regex.Matches(address.First().TextContentClean, @"(.*),?.*(\d\d\d\d) (Wien|Graz|Linz|[A-z]{2,12})");
-
-                    var street = "";
-                    var district = 0000;
-
-                    if(addr.Count > 0)
+                    foreach (var attr in attributes)
                     {
-                        street = addr[0].Groups[1].Value;
-                        district = int.Parse(addr[0].Groups[2].Value);
+                        switch(attr.name.ToString())
+                        {
+                            case "ESTATE_SIZE":
+                                float.TryParse(attr.values[0].ToString(), out aream2);
+                                break;
+
+                            case "PRICE":
+                                float.TryParse(attr.values[0].ToString(), out price);
+                                break;
+                            case "HEADING":
+                                title = attr.values[0].ToString();
+                                break;
+                            case "SEO_URL":
+                                href = href + attr.values[0].ToString();
+                                break;
+                            case "POSTCODE":
+                                int.TryParse(attr.values[0].ToString(), out district);
+                                break;
+                            case "NUMBER_OF_ROOMS":
+                                int.TryParse(attr.values[0].ToString(), out roomsCount);
+                                break;
+                            case "ADDRESS":
+                                addr = attr.values[0].ToString();
+                                break;
+                        }
                     }
 
 
-
-
-                    OnData?.Invoke(new Flat
+                    if (aream2 > 0 && roomsCount > 0)
                     {
-                        id = id,
-                        aream2 = m2,
-                        district = district,
-                        href = href,
-                        price = p4,
-                        street = street?.Substring(0, Math.Min(80, street.Length)),
-                        zimmerCount = zimmerCount,
-                        category = UrlToCategory(response.RequestlUrl),
-                        rentorbuy = UrlToRentOrBuy(response.RequestlUrl),
-                        Title = title
-                    });
+                        OnData?.Invoke(new Flat
+                        {
+                            id = id,
+                            aream2 = (int) aream2,
+                            district = district,
+                            href = href,
+                            price = price,
+                            street = addr,
+                            zimmerCount = roomsCount,
+                            category = UrlToCategory(response.RequestlUrl),
+                            rentorbuy = UrlToRentOrBuy(response.RequestlUrl),
+                            Title = title
+                        });
+
+                        elementsOnPageFound = true;
+                    }
+
+                    
 
                 }
 
-                if(response.CssExists(".isRealestate"))
+                if (elementsOnPageFound)
                 {
                     this.Request(url + (++currentCrawledPageNum), Parse);
                 }
-                
+
+
+
             }
 
             private string UrlToRentOrBuy(string requestlUrl)
