@@ -398,7 +398,7 @@ namespace WillhabenScrapper
                 var script = matches.Groups[1].Value;
                 dynamic json = JsonConvert.DeserializeObject(script);
 
-                var results = json?.props?.initialProps?.pageProps?.searchResult?.advertSummaryList?.advertSummary;
+                var results = json?.props?.pageProps?.searchResult?.advertSummaryList?.advertSummary;
 
                 var elementsOnPageFound = false;
 
